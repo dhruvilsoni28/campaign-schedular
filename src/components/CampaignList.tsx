@@ -7,12 +7,22 @@ interface CampaignListProps {
   onDelete: (id: number) => void;
 }
 
-const getNextActivation = (schedule: { day: string; startTime: string }[]) => {
+const getNextActivation = (
+  schedule: { day: string; startTime: string }[],
+  startDate: string,
+  endDate: string
+) => {
   if (!schedule.length) return "No upcoming activation";
 
-  const today = new Date();
-  const currentDayIndex = today.getDay();
-  const currentTime = today.getHours() * 60 + today.getMinutes(); // Convert to minutes
+  // Parse the start date
+  const startDateObj = new Date(startDate);
+
+  // Validate start date
+  if (isNaN(startDateObj.getTime())) {
+    throw new Error("Invalid start date");
+  }
+
+  const currentDayIndex = startDateObj.getDay();
 
   const daysOfWeek = [
     "Sunday",
@@ -24,26 +34,45 @@ const getNextActivation = (schedule: { day: string; startTime: string }[]) => {
     "Saturday",
   ];
 
-  return (
-    schedule.reduce<{ nextActivation: string | null; minDiff: number }>(
-      (acc, { day, startTime }) => {
-        const [startHour, startMinute] = startTime.split(":").map(Number);
-        const scheduleTime = startHour * 60 + startMinute; // Convert to minutes
+  const nextActive = schedule.reduce<{
+    day: string;
+    startTime: string;
+    dayDiff: number;
+  } | null>((acc, { day, startTime }) => {
+    const scheduleDayIndex = daysOfWeek.findIndex((d) => d === day);
 
-        const scheduleDayIndex = daysOfWeek.findIndex((d) => d === day);
+    let dayDiff = scheduleDayIndex - currentDayIndex;
 
-        let dayDiff = scheduleDayIndex - currentDayIndex + 1;
+    if (dayDiff <= 0) {
+      dayDiff += 7;
+    }
 
-        if (dayDiff < 0) dayDiff += 7; // Wrap around to next week
+    if (!acc || dayDiff < acc.dayDiff) {
+      return { day, startTime, dayDiff };
+    }
 
-        const totalDiff = dayDiff * 1440 + (scheduleTime - currentTime); // Convert to total minutes
-        return totalDiff > 0 && totalDiff < acc.minDiff
-          ? { nextActivation: `${day}, ${startTime}`, minDiff: totalDiff }
-          : acc;
-      },
-      { nextActivation: null, minDiff: Infinity }
-    ).nextActivation || "No upcoming activation"
-  );
+    return acc;
+  }, null);
+
+  if (!nextActive) {
+    return "No Upcoming activation";
+  }
+
+  // Calculate the exact date of the next activation
+  const nextActivationDate = new Date(startDateObj);
+  nextActivationDate.setDate(startDateObj.getDate() + nextActive.dayDiff);
+
+  // Check if the next activation date is within the end date
+  const endDateObj = new Date(endDate);
+  if (nextActivationDate > endDateObj) {
+    return "No Upcoming activation";
+  }
+
+  // Format the date as YYYY-MM-DD
+  const formattedDate = nextActivationDate.toISOString().split("T")[0];
+
+  // Return the full activation details
+  return `${nextActive.day},${formattedDate},${nextActive.startTime}`;
 };
 
 const CampaignList: React.FC<CampaignListProps> = ({
@@ -64,7 +93,12 @@ const CampaignList: React.FC<CampaignListProps> = ({
               <p className="text-gray-500">Start: {campaign.startDate}</p>
               <p className="text-gray-500">End: {campaign.endDate}</p>
               <p className="text-blue-600 font-semibold">
-                Next Activation: {getNextActivation(campaign.schedule)}
+                Next Activation:{" "}
+                {getNextActivation(
+                  campaign.schedule,
+                  campaign.startDate,
+                  campaign.endDate
+                )}
               </p>
               <div className="mt-3 flex justify-between">
                 <button
